@@ -6,5 +6,7 @@
   },
   "previousKeyRate": 15.5,
   "keyRateChange": -0.5,
+  "previousInflation": 5.91,
+  "inflationChange": -0.05,
   "source": "ЦБ РФ, 18.04.2026"
 }
