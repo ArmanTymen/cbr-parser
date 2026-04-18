@@ -25,15 +25,26 @@ async function parseCBR() {
   const keyRate = latest[1] / 100
   const inflation = latest[2] / 100
 
-  const prev = raw[2]
-  const prevKeyRate = prev ? prev[1] / 100 : null
+const prev = raw[2]
 
-  const result = {
-    current: { date, keyRate, inflation },
-    previousKeyRate: prevKeyRate,
-    keyRateChange: prevKeyRate ? keyRate - prevKeyRate : null,
-    source: `ЦБ РФ, ${toDate}`
-  }
+const prevKeyRate = prev ? prev[1] / 100 : null
+const prevInflation = prev ? prev[2] / 100 : null
+
+const result = {
+  current: {
+    date,
+    keyRate,
+    inflation
+  },
+
+  previousKeyRate: prevKeyRate,
+  keyRateChange: prevKeyRate ? keyRate - prevKeyRate : null,
+
+  previousInflation: prevInflation,
+  inflationChange: Number((inflation - prevInflation).toFixed(2)),
+
+  source: `ЦБ РФ, ${toDate}`
+}
 
   return result
 }
