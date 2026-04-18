@@ -126,8 +126,8 @@ async function run(): Promise<void> {
       const data: CBRData = await parseCBR();
 
       // Валидация: если данные не обновились (например, ставка null), считаем попытку неудачной
-      if (data.current.keyRate === null) {
-        throw new Error('Key rate data is missing in the source');
+      if (!data.current.period) {
+        throw new Error('Could not parse any data from Excel');
       }
 
       fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
