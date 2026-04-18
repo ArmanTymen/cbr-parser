@@ -5,7 +5,7 @@ name: Parse CBR Data
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '40 10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -24,10 +24,12 @@ jobs:
           node-version: 18
 
       - name: Install deps
-        run: npm install
+        run: |
+          npm install
+          npm install -g tsx
 
       - name: Run parser
-        run: node parser.js
+        run: npx tsx parser.ts
 
       - name: Commit result
         run: |
