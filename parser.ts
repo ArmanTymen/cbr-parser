@@ -1,156 +1,214 @@
-import fetch, { Response } from 'node-fetch';
-import * as XLSX from 'xlsx';
-import * as fs from 'fs';
+import fetch, { Response } from 'node-fetch'
+import * as XLSX from 'xlsx'
+import * as fs from 'fs'
 
-/**
- * Интерфейсы данных
- */
 interface CBRData {
   metadata: {
-    source: string;
-    updatedAt: string;
-  };
+    source: string
+    updatedAt: string
+  }
   current: {
-    period: string;
-    keyRate: number | null;
-    inflation: number | null;
-  };
+    period: string
+    keyRate: number | null
+    inflation: number | null
+  }
   previous: {
-    keyRate: number | null;
-    inflation: number | null;
-  };
+    keyRate: number | null
+    inflation: number | null
+  }
   changes: {
-    keyRate: number | null;
-    inflation: number | null;
-  };
+    keyRate: number | null
+    inflation: number | null
+  }
+  yearlyMaxRates: YearlyMaxRate[]
 }
 
-/**
- * Вспомогательные функции
- */
+interface YearlyMaxRate {
+  year: number
+  maxKeyRate: number | null
+  period: string
+}
+
 function safeNumber(value: unknown): number | null {
-  const num = Number(value);
-  return typeof num === 'number' && !isNaN(num) ? num : null;
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
 }
 
-function round(value: number | null, digits: number = 2): number | null {
-  return value !== null ? Number(value.toFixed(digits)) : null;
+function round(value: number | null, digits = 2): number | null {
+  return value !== null ? Number(value.toFixed(digits)) : null
 }
 
-const delay = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
+function normalizeRate(value: number | null): number | null {
+  if (value === null) return null
 
-/**
- * Основная логика парсинга
- */
-async function parseCBR(): Promise<CBRData> {
-  const today: Date = new Date();
-  const toDate: string = `${today.getDate().toString().padStart(2, '0')}.${(
-    today.getMonth() + 1
-  ).toString().padStart(2, '0')}.${today.getFullYear()}`;
+  // если уже доля
+  if (value > 0 && value < 1) return value
 
-  const url: string =
-    `https://www.cbr.ru/hd_base/infl/?UniDbQuery.Posted=True` +
-    `&UniDbQuery.From=01.01.2025` +
-    `&UniDbQuery.To=${toDate}` +
-    `&UniDbQuery.Format=Excel`;
+  // если проценты
+  return value / 100
+}
 
-  const response: Response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`CBR Network response was not ok: ${response.statusText}`);
+const delay = (ms: number) => new Promise(res => setTimeout(res, ms))
+
+function analyzeMaxRatesByYear(raw: unknown[][]): YearlyMaxRate[] {
+  const yearlyData = new Map<number, { rate: number; period: string }>()
+
+  for (let i = 1; i < raw.length; i++) {
+    const row = raw[i]
+    if (!row || row.length < 2) continue
+
+    const rawPeriod = safeNumber(row[0])
+    const rawRate = safeNumber(row[1])
+
+    if (rawPeriod === null || rawRate === null) continue
+
+    // Пропускаем сырое значение через нормализацию (2100 -> 21)
+    const rate = normalizeRate(rawRate)
+
+    // Если после нормализации получили null, пропускаем итерацию
+    if (rate === null) continue
+
+    const month = Math.floor(rawPeriod)
+    const year = Math.round((rawPeriod - month) * 10000)
+
+    const existing = yearlyData.get(year)
+
+    if (!existing || rate > existing.rate) {
+      yearlyData.set(year, {
+        rate,
+        period: `${year}-${String(month).padStart(2, '0')}`
+      })
+    }
   }
 
-  const buffer: ArrayBuffer = await response.arrayBuffer();
-  const workbook: XLSX.WorkBook = XLSX.read(buffer, { type: 'array' });
-  const sheetName: string = workbook.SheetNames[0];
-  const sheet: XLSX.WorkSheet = workbook.Sheets[sheetName];
-  
-  // Типизируем массив как массив массивов любого типа (unknown)
-  const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  return Array.from(yearlyData.entries())
+    .map(([year, data]) => ({
+      year,
+      maxKeyRate: round(data.rate, 2),
+      period: data.period
+    }))
+    .sort((a, b) => a.year - b.year)
+}
 
-  const latest: unknown[] | undefined = raw?.[1];
-  const prev: unknown[] | undefined = raw?.[2];
+async function parseCBR(): Promise<CBRData> {
+  const today = new Date()
+  const toDate = `${today.getDate().toString().padStart(2, '0')}.${(
+    today.getMonth() + 1
+  ).toString().padStart(2, '0')}.${today.getFullYear()}`
+
+  const url =
+    `https://www.cbr.ru/hd_base/infl/?UniDbQuery.Posted=True` +
+    `&UniDbQuery.From=01.01.2015` +
+    `&UniDbQuery.To=${toDate}` +
+    `&UniDbQuery.Format=Excel`
+
+  const response: Response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Network error: ${response.statusText}`)
+  }
+
+  const buffer = await response.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+
+  const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+
+  const latest = raw[1]
+  const prev = raw[2]
 
   if (!latest || latest.length < 3) {
-    throw new Error('No valid data rows found in CBR Excel');
+    throw new Error('No valid data')
   }
 
-  // Парсинг периода (ЦБ использует формат Month.Year в первой колонке)
-  const rawPeriod: number = Number(latest[0]);
-  const monthIndex: number = Math.floor(rawPeriod);
-  const year: number = Math.round((rawPeriod - monthIndex) * 10000);
-  const period: string = `${year}-${String(monthIndex).padStart(2, '0')}`;
+  const rawPeriod = safeNumber(latest[0])
+  const month = rawPeriod ? Math.floor(rawPeriod) : 0
+  const year = rawPeriod ? Math.round((rawPeriod - month) * 10000) : 0
 
-  const keyRate: number | null = safeNumber(latest[1]) ? (safeNumber(latest[1])! / 100) : null;
-  const inflation: number | null = safeNumber(latest[2]) ? (safeNumber(latest[2])! / 100) : null;
+  const period = `${year}-${String(month).padStart(2, '0')}`
 
-  const prevKeyRate: number | null = prev ? (safeNumber(prev[1]) ? safeNumber(prev[1])! / 100 : null) : null;
-  const prevInflation: number | null = prev ? (safeNumber(prev[2]) ? safeNumber(prev[2])! / 100 : null) : null;
+  const keyRateRaw = safeNumber(latest[1])
+  const inflationRaw = safeNumber(latest[2])
 
-  const keyRateChange: number | null =
-    keyRate !== null && prevKeyRate !== null ? round(keyRate - prevKeyRate) : null;
+  const keyRate = normalizeRate(keyRateRaw)
+  const inflation = normalizeRate(inflationRaw)
 
-  const inflationChange: number | null =
-    inflation !== null && prevInflation !== null ? round(inflation - prevInflation) : null;
+  const prevKeyRate = normalizeRate(safeNumber(prev?.[1]))
+  const prevInflation = normalizeRate(safeNumber(prev?.[2]))
+
+  const keyRateChange =
+    keyRate !== null && prevKeyRate !== null
+      ? round(keyRate - prevKeyRate)
+      : null
+
+  const inflationChange =
+    inflation !== null && prevInflation !== null
+      ? round(inflation - prevInflation)
+      : null
+
+  const yearlyMaxRates = analyzeMaxRatesByYear(raw)
 
   return {
     metadata: {
       source: 'CBR',
-      updatedAt: toDate,
+      updatedAt: toDate
     },
     current: {
       period,
       keyRate,
-      inflation,
+      inflation
     },
     previous: {
       keyRate: prevKeyRate,
-      inflation: prevInflation,
+      inflation: prevInflation
     },
     changes: {
       keyRate: keyRateChange,
-      inflation: inflationChange,
+      inflation: inflationChange
     },
-  };
+    yearlyMaxRates
+  }
 }
 
-/**
- * Точка входа с логикой повторов
- */
 async function run(): Promise<void> {
-  const MAX_RETRIES: number = 5;
-  const INITIAL_DELAY_MS: number = 300000; // 5 минут
+  const MAX_RETRIES = 5
+  const INITIAL_DELAY = 300000
 
-  for (let i: number = 0; i < MAX_RETRIES; i++) {
+  for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      console.log(`Execution attempt ${i + 1}...`);
-      const data: CBRData = await parseCBR();
+      console.log(`Run ${i + 1}`)
 
-      // Валидация: если данные не обновились (например, ставка null), считаем попытку неудачной
-      if (!data.current.period) {
-        throw new Error('Could not parse any data from Excel');
-      }
+      const data = await parseCBR()
 
-      fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
-      
-      console.log('--- Successful Update ---');
-      console.table(data.current);
-      return; 
+      fs.writeFileSync('data.json', JSON.stringify(data, null, 2))
 
-    } catch (e: unknown) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      console.error(`Attempt ${i + 1} failed: ${errorMessage}`);
+      console.log('\n📊 Current:')
+      console.table(data.current)
+
+      console.log('\n📈 Yearly max rates:')
+      console.table(
+        data.yearlyMaxRates.map(x => ({
+          Year: x.year,
+          Rate: x.maxKeyRate,
+          Period: x.period
+        }))
+      )
+
+      console.log('\n📋 Summary:')
+      data.yearlyMaxRates.forEach(x => {
+        console.log(`${x.year}: ${x.maxKeyRate}% (${x.period})`)
+      })
+
+      return
+    } catch (e) {
+      console.error(`Attempt ${i + 1} failed:`, e)
 
       if (i < MAX_RETRIES - 1) {
-        // Увеличиваем ожидание с каждой попыткой: 5мин, 10мин, 15мин...
-        const nextDelay: number = INITIAL_DELAY_MS * (i + 1);
-        console.log(`Retrying in ${nextDelay / 60000} minutes...`);
-        await delay(nextDelay);
+        await delay(INITIAL_DELAY * (i + 1))
       } else {
-        console.error('All retries exhausted. Workflow failed.');
-        process.exit(1);
+        process.exit(1)
       }
     }
   }
 }
 
-run();
+run()
