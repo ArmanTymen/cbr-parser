@@ -1,22 +1,20 @@
-permissions:
-  contents: write
-
 name: Parse CBR Data
 
 on:
   schedule:
-    - cron: '40 10 * * *'
+    # 15:00 UTC = 18:00 по Москве (ЦБ уже обновил данные)
+    - cron: '0 15 * * *' 
   workflow_dispatch:
 
 jobs:
   parse:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Важно для push
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -36,6 +34,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add data.json
-          git commit -m "update data" || echo "no changes"
+          # Добавляем все json файлы (и data.json и YYYY-MM-DD.json)
+          git add *.json 
+          git commit -m "update data: $(date +'%Y-%m-%d')" || echo "no changes"
           git push

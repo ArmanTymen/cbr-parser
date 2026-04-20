@@ -175,11 +175,31 @@ async function run(): Promise<void> {
 
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      console.log(`Run ${i + 1}`)
-
+      console.log(`Run attempt ${i + 1}`)
       const data = await parseCBR()
 
+      // Основной файл для сводных данных
       fs.writeFileSync('data.json', JSON.stringify(data, null, 2))
+
+      // СОЗДАЕМ ТАРГЕТНЫЙ ФАЙЛ ДЛЯ ДАТЫ (чтобы избежать 404 в приложении)
+      // Берем дату обновления из метаданных (формат 18.04.2026)
+      const [d, m, y] = data.metadata.updatedAt.split('.')
+      const fileName = `${y}-${m}-${d}.json`
+      
+      // Также сохраняем копию под конкретную дату
+      fs.writeFileSync(fileName, JSON.stringify(data, null, 2))
+      console.log(`✅ Saved daily file: ${fileName}`)
+
+      // Если сегодня понедельник, а updatedAt еще пятничный, 
+      // можно принудительно создать файл за понедельник
+      const today = new Date()
+      if (today.getDay() === 1) {
+        const mondayName = today.toISOString().split('T')[0] + '.json'
+        if (fileName !== mondayName) {
+            fs.writeFileSync(mondayName, JSON.stringify(data, null, 2))
+            console.log(`✅ Monday fallback created: ${mondayName}`)
+        }
+      }
 
       console.log('\n📊 Current:')
       console.table(data.current)
