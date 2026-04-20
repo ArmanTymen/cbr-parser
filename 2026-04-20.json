@@ -1,0 +1,81 @@
+{
+  "metadata": {
+    "source": "CBR",
+    "updatedAt": "20.04.2026"
+  },
+  "current": {
+    "period": "2026-03",
+    "keyRate": 15,
+    "inflation": 5.86
+  },
+  "previous": {
+    "keyRate": 15.5,
+    "inflation": 5.91
+  },
+  "changes": {
+    "keyRate": -0.5,
+    "inflation": -0.05
+  },
+  "yearlyMaxRates": [
+    {
+      "year": 2015,
+      "maxKeyRate": 17,
+      "period": "2015-01"
+    },
+    {
+      "year": 2016,
+      "maxKeyRate": 11,
+      "period": "2016-05"
+    },
+    {
+      "year": 2017,
+      "maxKeyRate": 10,
+      "period": "2017-02"
+    },
+    {
+      "year": 2018,
+      "maxKeyRate": 7.75,
+      "period": "2018-12"
+    },
+    {
+      "year": 2019,
+      "maxKeyRate": 7.75,
+      "period": "2019-05"
+    },
+    {
+      "year": 2020,
+      "maxKeyRate": 6.25,
+      "period": "2020-01"
+    },
+    {
+      "year": 2021,
+      "maxKeyRate": 8.5,
+      "period": "2021-12"
+    },
+    {
+      "year": 2022,
+      "maxKeyRate": 20,
+      "period": "2022-03"
+    },
+    {
+      "year": 2023,
+      "maxKeyRate": 16,
+      "period": "2023-12"
+    },
+    {
+      "year": 2024,
+      "maxKeyRate": 21,
+      "period": "2024-12"
+    },
+    {
+      "year": 2025,
+      "maxKeyRate": 21,
+      "period": "2025-05"
+    },
+    {
+      "year": 2026,
+      "maxKeyRate": 16,
+      "period": "2026-01"
+    }
+  ]
+}
